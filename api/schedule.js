@@ -54,11 +54,20 @@ export default async function handler(req, res) {
         const away = competitors.find(c => c.homeAway === "away");
 
         // include rankings if available
-        const formatTeam = t => {
-          const rank = t?.curatedRank?.current;
-          const name = t?.team?.shortDisplayName || t?.team?.displayName || "";
-          return rank && rank > 0 ? `#${rank} ${name}` : name;
-        };
+        const formatTeam = (t) => {
+  if (!t || !t.team) return "";
+
+  const rank = t.curatedRank?.current;
+  const name = t.team.shortDisplayName || t.team.displayName || "";
+
+  // Only show ranking if 1–25
+  if (rank && rank > 0 && rank <= 25) {
+    return `#${rank} ${name}`;
+  }
+
+  return name; // no rank for unranked teams
+};
+
 
         const homeTeam = formatTeam(home);
         const awayTeam = formatTeam(away);
