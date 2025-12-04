@@ -1,185 +1,128 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>College Football – Full Week</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<style>
-    body {
-        margin: 0;
-        padding: 0;
-        font-family: system-ui, sans-serif;
-        background: #003300; /* NDSU green */
-        color: #f1f1b0;      /* NDSU gold-tint */
-        text-align: center;
-    }
-    header {
-        font-size: 2.2rem;
-        font-weight: bold;
-        padding: 1.4rem 0;
-        background: #004d00;
-        color: #ffcc00;
-        border-bottom: 6px solid #ffcc00;
-    }
-    .controls {
-        margin-top: 1rem;
-        margin-bottom: 1rem;
-    }
-    .controls label {
-        margin-right: 1rem;
-        font-size: 1rem;
-    }
-    button {
-        background: #ffcc00;
-        border: none;
-        padding: 0.6rem 1.2rem;
-        font-size: 1rem;
-        margin: 0.4rem;
-        border-radius: 6px;
-        cursor: pointer;
-        font-weight: bold;
-    }
-    button:hover {
-        background: #ffd633;
-    }
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 1rem;
-    }
-    thead {
-        background: #004d00;
-        color: #ffcc00;
-        font-size: 1.1rem;
-    }
-    th, td {
-        padding: 0.75rem;
-        border-bottom: 1px solid #006600;
-    }
-    tbody tr:nth-child(even) {
-        background: #002200;
-    }
-    tbody tr:nth-child(odd) {
-        background: #001a00;
-    }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>College Football – Full Week</title>
+
+    <style>
+        body {
+            background-color: #003300;
+            color: #FFD700;
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+
+        table {
+            width: 95%;
+            margin: 20px auto;
+            border-collapse: collapse;
+        }
+
+        th {
+            background-color: #004400;
+            padding: 12px;
+            font-size: 18px;
+        }
+
+        td {
+            padding: 10px;
+            background-color: #002200;
+            border-bottom: 1px solid #005500;
+        }
+    </style>
 </head>
 
 <body>
 
-<header>College Football – Full Week</header>
+    <h1>College Football – Full Week</h1>
 
-<div class="controls">
-    <label><input type="checkbox" id="chkFBS" checked> FBS</label>
-    <label><input type="checkbox" id="chkFCS" checked> FCS</label>
-    <label><input type="checkbox" id="chkD2"  checked> D2</label>
-    <label><input type="checkbox" id="chkD3"  checked> D3</label>
-    <label><input type="checkbox" id="chkNAIA" checked> NAIA</label>
-</div>
+    <div id="controls">
+        <button onclick="changeWeek(-1)">← Previous Week</button>
+        <button onclick="changeWeek(1)">Next Week →</button>
+    </div>
 
-<div class="controls">
-    <button onclick="changeWeek(-1)">← Previous Week</button>
-    <button onclick="changeWeek(1)">Next Week →</button>
-</div>
+    <p id="weekTitle"></p>
 
-<h3 id="loading">Loading...</h3>
-
-<table>
-<thead>
-<tr>
-    <th>Time</th>
-    <th>Div</th>
-    <th>Matchup</th>
-    <th>TV</th>
-</tr>
-</thead>
-<tbody id="scheduleBody">
-</tbody>
-</table>
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Div</th>
+                <th>Matchup</th>
+                <th>TV</th>
+            </tr>
+        </thead>
+        <tbody id="games"></tbody>
+    </table>
 
 <script>
-let currentYear = new Date().getFullYear();
-let currentWeek = 1;
+let currentWeek = 12;
 
-// Determine current week based on date
-(function calculateCurrentWeek() {
-    const today = new Date();
-    const firstGame = new Date(today.getFullYear(), 7, 25); // Aug 25
-    const diff = (today - firstGame) / (1000 * 60 * 60 * 24);
-    currentWeek = Math.max(1, Math.floor(diff / 7) + 1);
-})();
+// Convert "12:00 PM" into sortable numbers
+function parseTime(t) {
+    if (!t || t === "TBA" || t === "TBD") return 9999; // push to bottom
 
-async function loadSchedule() {
-    document.getElementById("loading").innerText = "Loading...";
+    let [_, h, m, ampm] = t.match(/(\d+):(\d+)\s?(AM|PM)/i);
+    h = parseInt(h);
+    m = parseInt(m);
 
-    const url = `/api/schedule?year=${currentYear}&week=${currentWeek}`;
-    const resp = await fetch(url);
-    const data = await resp.json();
+    if (ampm.toUpperCase() === "PM" && h !== 12) h += 12;
+    if (ampm.toUpperCase() === "AM" && h === 12) h = 0;
 
-    const body = document.getElementById("scheduleBody");
-    body.innerHTML = "";
+    return h * 100 + m;
+}
 
-    const divFilters = {
-        fbs: document.getElementById("chkFBS").checked,
-        fcs: document.getElementById("chkFCS").checked,
-        d2:  document.getElementById("chkD2").checked,
-        d3:  document.getElementById("chkD3").checked,
-        naia:document.getElementById("chkNAIA").checked
-    };
+function loadWeek() {
+    const url = `/api/schedule?year=2025&week=${currentWeek}`;
+    document.getElementById("weekTitle").textContent = "Loading...";
 
-    const allGames = [];
+    fetch(url)
+        .then(res => res.json())
+        .then(data => {
+            let allGames = [];
 
-    for (const div in data.divisions) {
-        if (!divFilters[div]) continue;
-        data.divisions[div].forEach(g => {
-            allGames.push({
-                time: g.time || "",
-                matchup: g.matchup || "",
-                tv: g.tv || "",
-                div
+            Object.keys(data.divisions).forEach(div => {
+                data.divisions[div].forEach(g => {
+                    allGames.push({
+                        time: g.time,
+                        div,
+                        matchup: g.matchup,
+                        tv: g.tv
+                    });
+                });
+            });
+
+            // Sort properly by actual time
+            allGames.sort((a, b) => parseTime(a.time) - parseTime(b.time));
+
+            document.getElementById("weekTitle").textContent =
+                `Loaded ${allGames.length} games for Week ${currentWeek}`;
+
+            const tbody = document.getElementById("games");
+            tbody.innerHTML = "";
+
+            allGames.forEach(g => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${g.time}</td>
+                        <td>${g.div}</td>
+                        <td>${g.matchup}</td>
+                        <td>${g.tv}</td>
+                    </tr>
+                `;
             });
         });
-    }
-
-    // Sort by division → time
-    const divOrder = { fbs: 1, fcs: 2, d2: 3, d3: 4, naia: 5 };
-    allGames.sort((a, b) => {
-        if (divOrder[a.div] !== divOrder[b.div]) {
-            return divOrder[a.div] - divOrder[b.div];
-        }
-        return a.time.localeCompare(b.time);
-    });
-
-    // Render table
-    allGames.forEach(g => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-            <td>${g.time}</td>
-            <td>${g.div.toUpperCase()}</td>
-            <td>${g.matchup}</td>
-            <td>${g.tv}</td>
-        `;
-        body.appendChild(row);
-    });
-
-    document.getElementById("loading").innerText =
-        `Loaded ${allGames.length} games for Week ${currentWeek}`;
 }
 
 function changeWeek(delta) {
     currentWeek += delta;
-    if (currentWeek < 1) currentWeek = 1;
-    loadSchedule();
+    loadWeek();
 }
 
-// Re-load when toggling filters
-document.querySelectorAll("input[type=checkbox]").forEach(cb => {
-    cb.addEventListener("change", loadSchedule);
-});
-
-// Initial load
-loadSchedule();
+loadWeek();
 </script>
 
 </body>
 </html>
+
