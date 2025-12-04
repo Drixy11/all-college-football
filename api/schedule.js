@@ -1,68 +1,80 @@
-import * as cheerio from "cheerio";
+// /api/schedule.js
 
 export default async function handler(req, res) {
-    const year = req.query.year ?? 2025;
-    const week = req.query.week ?? 1;
+  const year = req.query.year || 2025;
+  const week = req.query.week || 1;
 
-    const groups = {
-        fbs: 80,   // ESPN FBS group
-        fcs: 81,   // ESPN FCS group
-        d2: 35,    // ESPN D2 group
-        d3: 36,    // ESPN D3 group
-        naia: 9    // NAIA (treated as “small colleges” on ESPN)
-    };
+  const divisions = {
+    FBS: 80,
+    FCS: 81,
+    D2: 35,
+    D3: 36,
+    NAIA: 37
+  };
 
-    async function scrapeGroup(groupId) {
-        const url = `https://www.espn.com/college-football/schedule/_/week/${week}/year/${year}/seasontype/2/group/${groupId}`;
+  const results = {};
 
-        try {
-            const html = await fetch(url).then(r => r.text());
-            const $ = cheerio.load(html);
+  try {
+    for (const [name, group] of Object.entries(divisions)) {
+      const url = `https://site.web.api.espn.com/apis/v2/sports/football/college-football/scoreboard?week=${week}&year=${year}&group=${group}`;
 
-            const games = [];
+      const response = await fetch(url);
+      const data = await response.json();
 
-            $("table tbody tr").each((i, el) => {
-                const cols = $(el).find("td");
+      const games = [];
 
-                if (cols.length < 3) return;
+      if (!data.events) {
+        results[name] = [];
+        continue;
+      }
 
-                let time = $(cols[0]).text().trim();
-                let matchup = $(cols[1]).text().trim().replace(/\s+/g, " ");
-                let tv = $(cols[2]).text().trim();
+      for (const event of data.events) {
+        const c = event.competitions?.[0];
+        if (!c) continue;
 
-                games.push({
-                    time,
-                    matchup,
-                    tv
-                });
-            });
+        const competitors = c.competitors || [];
+        const home = competitors.find(t => t.homeAway === "home");
+        const away = competitors.find(t => t.homeAway === "away");
 
-            return games;
+        const homeTeam = home?.team?.displayName || "";
+        const awayTeam = away?.team?.displayName || "";
 
-        } catch (err) {
-            console.error("Scrape error for group:", groupId, err);
-            return [];
+        const matchup = `@ ${homeTeam}`; // UI handles full formatting
+
+        // Handle missing time
+        let time = event.date ? new Date(event.date).toLocaleTimeString("en-US", {
+          hour: "numeric",
+          minute: "2-digit"
+        }) : "TBA";
+
+        // Past games may have no time → fallback
+        if (event.status?.type?.completed) {
+          time = home?.score && away?.score ? (home.score > away.score ? homeTeam : awayTeam) : "Final";
         }
+
+        // TV may not exist
+        const tv = c.broadcasts?.[0]?.names?.[0] || "";
+
+        // Past games have a result instead of TV
+        let result = "";
+        if (home?.score && away?.score) {
+          result = `${homeTeam} ${home.score}, ${awayTeam} ${away.score}`;
+        }
+
+        games.push({
+          time,
+          matchup,
+          tv,
+          result
+        });
+      }
+
+      results[name] = games;
     }
 
-    // Scrape all 5 divisions at once (fast!)
-    const [fbs, fcs, d2, d3, naia] = await Promise.all([
-        scrapeGroup(groups.fbs),
-        scrapeGroup(groups.fcs),
-        scrapeGroup(groups.d2),
-        scrapeGroup(groups.d3),
-        scrapeGroup(groups.naia)
-    ]);
+    res.status(200).json({ week, divisions: results });
 
-    return res.status(200).json({
-        year,
-        week,
-        divisions: {
-            fbs,
-            fcs,
-            d2,
-            d3,
-            naia
-        }
-    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to scrape ESPN", details: err.toString() });
+  }
 }
