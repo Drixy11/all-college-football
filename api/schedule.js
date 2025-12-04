@@ -1,32 +1,48 @@
 // /api/schedule.js
-// Returns ALL college football games for a given week/year
-// Merged across FBS, FCS, D2/D3, etc., sorted by day/time.
 
 export default async function handler(req, res) {
   const now = new Date();
   const year = parseInt(req.query.year, 10) || now.getFullYear();
   const week = parseInt(req.query.week, 10) || 1;
 
-  // ESPN "group" IDs
   const DIVISIONS = [
     { key: "FBS", group: 80 },
     { key: "FCS", group: 81 },
     { key: "D2/D3", group: 35 },
-    // If you later confirm NAIA group ID, add it here:
-    // { key: "NAIA", group: XX },
   ];
+
+  function formatEasternTime(iso) {
+    try {
+      return new Date(iso).toLocaleTimeString("en-US", {
+        timeZone: "America/New_York",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    } catch {
+      return "TBA";
+    }
+  }
+
+  function getDayName(iso) {
+    try {
+      return new Date(iso).toLocaleDateString("en-US", {
+        timeZone: "America/New_York",
+        weekday: "short",
+      });
+    } catch {
+      return "";
+    }
+  }
 
   async function fetchDivision(div) {
     const url = `https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=${div.group}&week=${week}&year=${year}`;
 
     try {
       const resp = await fetch(url);
-      if (!resp.ok) {
-        console.error(`Failed to fetch ${div.key} scoreboard`, resp.status);
-        return [];
-      }
+      if (!resp.ok) return [];
       const data = await resp.json();
-      const events = Array.isArray(data.events) ? data.events : [];
+      const events = data.events || [];
+
       const games = [];
 
       for (const event of events) {
@@ -34,55 +50,38 @@ export default async function handler(req, res) {
         if (!comp) continue;
 
         const competitors = comp.competitors || [];
-        const home = competitors.find(c => c.homeAway === "home") || competitors[0];
-        const away = competitors.find(c => c.homeAway === "away") || competitors[1];
+        const home = competitors.find(c => c.homeAway === "home");
+        const away = competitors.find(c => c.homeAway === "away");
 
-        const homeTeam =
-          home?.team?.shortDisplayName ||
-          home?.team?.displayName ||
-          "Home";
-        const awayTeam =
-          away?.team?.shortDisplayName ||
-          away?.team?.displayName ||
-          "Away";
+        // include rankings if available
+        const formatTeam = t => {
+          const rank = t?.curatedRank?.current;
+          const name = t?.team?.shortDisplayName || t?.team?.displayName || "";
+          return rank && rank > 0 ? `#${rank} ${name}` : name;
+        };
 
-        // Parse date/time
-        let dateObj;
-        try {
-          dateObj = event.date ? new Date(event.date) : null;
-        } catch {
-          dateObj = null;
-        }
+        const homeTeam = formatTeam(home);
+        const awayTeam = formatTeam(away);
 
-        const day = dateObj
-          ? dateObj.toLocaleDateString("en-US", { weekday: "short" }) // e.g. Sat
-          : "";
+        const isoDate = event.date;
+        const day = getDayName(isoDate);
+        const time = formatEasternTime(isoDate);
 
-        const time = dateObj
-          ? dateObj.toLocaleTimeString("en-US", {
-              hour: "numeric",
-              minute: "2-digit",
-            })
-          : "TBA";
-
-        // TV / network
+        // TV
         let tv = "";
-        if (Array.isArray(comp.broadcasts) && comp.broadcasts.length > 0) {
+        if (comp.broadcasts?.length > 0) {
           tv = comp.broadcasts[0].names?.[0] || "";
         }
 
-        // Result (if completed)
-        const homeScore =
-          typeof home?.score === "string" ? parseInt(home.score, 10) : null;
-        const awayScore =
-          typeof away?.score === "string" ? parseInt(away.score, 10) : null;
+        // Game status
+        const statusType = event.status?.type?.completed;
+        const homeScore = home?.score;
+        const awayScore = away?.score;
 
-        let resultText = "";
-        if (homeScore !== null && awayScore !== null) {
-          resultText = `${awayTeam} ${awayScore} @ ${homeTeam} ${homeScore}`;
+        let tvOrResult = tv;
+        if (statusType) {
+          tvOrResult = `${awayTeam} ${awayScore} @ ${homeTeam} ${homeScore}`;
         }
-
-        const tvOrResult = resultText || tv || "";
 
         games.push({
           day,
@@ -90,37 +89,28 @@ export default async function handler(req, res) {
           division: div.key,
           matchup: `${awayTeam} @ ${homeTeam}`,
           tvOrResult,
-          sortKey: dateObj ? dateObj.toISOString() : `${day} ${time}`,
+          sortKey: new Date(isoDate).getTime(),
         });
       }
 
       return games;
     } catch (err) {
-      console.error(`Error fetching ${div.key}:`, err);
+      console.error("API error:", err);
       return [];
     }
   }
 
   try {
-    const allDivisionGames = await Promise.all(
-      DIVISIONS.map(div => fetchDivision(div))
-    );
+    const all = (await Promise.all(DIVISIONS.map(fetchDivision))).flat();
 
-    let games = allDivisionGames.flat();
-
-    // Sort by datetime
-    games.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-
-    // Strip internal sortKey before sending
-    games = games.map(({ sortKey, ...rest }) => rest);
+    all.sort((a, b) => a.sortKey - b.sortKey);
 
     res.status(200).json({
       year,
       week,
-      games,
+      games: all,
     });
   } catch (err) {
-    console.error("schedule API error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 }
