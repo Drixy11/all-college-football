@@ -1,81 +1,92 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>College Football – Full Week</title>
-
-    <style>
-        body {
-            background-color: #003300;
-            color: #FFD700;
-            font-family: Arial, sans-serif;
-            text-align: center;
-        }
-
-        table {
-            width: 95%;
-            margin: 20px auto;
-            border-collapse: collapse;
-        }
-
-        th {
-            background-color: #004400;
-            padding: 12px;
-            font-size: 18px;
-        }
-
-        td {
-            padding: 10px;
-            background-color: #002200;
-            border-bottom: 1px solid #005500;
-        }
-    </style>
+<meta charset="UTF-8">
+<title>College Football – Full Week</title>
+<style>
+    body {
+        background: #003300;
+        color: #ffcc00;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        text-align: center;
+    }
+    h1 {
+        margin-top: 20px;
+        font-size: 36px;
+        font-weight: bold;
+    }
+    table {
+        width: 100%;
+        margin-top: 20px;
+        border-collapse: collapse;
+        color: white;
+    }
+    th, td {
+        padding: 12px;
+        border-bottom: 1px solid #225522;
+        font-size: 18px;
+    }
+    th {
+        background: #004400;
+        font-weight: bold;
+    }
+    tr:nth-child(even) {
+        background: #002800;
+    }
+    .btn {
+        background: #ffcc00;
+        color: #003300;
+        padding: 10px 20px;
+        border-radius: 8px;
+        margin: 10px;
+        cursor: pointer;
+        border: none;
+        font-weight: bold;
+    }
+</style>
 </head>
-
 <body>
 
-    <h1>College Football – Full Week</h1>
+<h1>College Football – Full Week</h1>
 
-    <div id="controls">
-        <button onclick="changeWeek(-1)">← Previous Week</button>
-        <button onclick="changeWeek(1)">Next Week →</button>
-    </div>
+<button class="btn" onclick="changeWeek(-1)">← Previous Week</button>
+<button class="btn" onclick="changeWeek(1)">Next Week →</button>
 
-    <p id="weekTitle"></p>
+<h3 id="weekTitle">Loading...</h3>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Time</th>
-                <th>Div</th>
-                <th>Matchup</th>
-                <th>TV</th>
-            </tr>
-        </thead>
-        <tbody id="games"></tbody>
-    </table>
+<table>
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>Div</th>
+            <th>Matchup</th>
+            <th>TV / Result</th>
+        </tr>
+    </thead>
+    <tbody id="games"></tbody>
+</table>
 
 <script>
 let currentWeek = 12;
+let currentYear = 2025;
 
-// Convert "12:00 PM" into sortable numbers
-function parseTime(t) {
-    if (!t || t === "TBA" || t === "TBD") return 9999; // push to bottom
-
-    let [_, h, m, ampm] = t.match(/(\d+):(\d+)\s?(AM|PM)/i);
-    h = parseInt(h);
-    m = parseInt(m);
-
-    if (ampm.toUpperCase() === "PM" && h !== 12) h += 12;
-    if (ampm.toUpperCase() === "AM" && h === 12) h = 0;
-
-    return h * 100 + m;
+function parseTime(str) {
+    if (!str || str === "TBA" || str === "Final") return 999999;
+    let d = new Date("1/1/2000 " + str);
+    return d.getTime();
 }
 
-function loadWeek() {
-    const url = `/api/schedule?year=2025&week=${currentWeek}`;
-    document.getElementById("weekTitle").textContent = "Loading...";
+function changeWeek(dir) {
+    currentWeek += dir;
+    loadGames();
+}
+
+function loadGames() {
+    document.getElementById("games").innerHTML = "";
+    document.getElementById("weekTitle").innerText = "Loading...";
+
+    let url = `/api/schedule?year=${currentYear}&week=${currentWeek}`;
 
     fetch(url)
         .then(res => res.json())
@@ -85,21 +96,20 @@ function loadWeek() {
             Object.keys(data.divisions).forEach(div => {
                 data.divisions[div].forEach(g => {
                     allGames.push({
-                        time: g.time,
+                        time: g.time || "TBA",
                         div,
-                        matchup: g.matchup,
-                        tv: g.tv
+                        matchup: g.matchup || "",
+                        tv: g.tv || g.result || ""
                     });
                 });
             });
 
-            // Sort properly by actual time
-            allGames.sort((a, b) => parseTime(a.time) - parseTime(b.time));
+            allGames.sort((a,b) => parseTime(a.time) - parseTime(b.time));
 
-            document.getElementById("weekTitle").textContent =
+            document.getElementById("weekTitle").innerText =
                 `Loaded ${allGames.length} games for Week ${currentWeek}`;
 
-            const tbody = document.getElementById("games");
+            let tbody = document.getElementById("games");
             tbody.innerHTML = "";
 
             allGames.forEach(g => {
@@ -115,14 +125,8 @@ function loadWeek() {
         });
 }
 
-function changeWeek(delta) {
-    currentWeek += delta;
-    loadWeek();
-}
-
-loadWeek();
+loadGames();
 </script>
 
 </body>
 </html>
-
