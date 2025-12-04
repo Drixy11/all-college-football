@@ -1,61 +1,58 @@
+import fetch from "node-fetch";
 import * as cheerio from "cheerio";
+
+const GROUPS = {
+  fbs: 80,
+  fcs: 81,
+  d2: 36,
+  d3: 35,
+  naia: 34
+};
+
+async function scrapeGroup(year, week, groupId) {
+  const url = `https://www.espn.com/college-football/schedule/_/week/${week}/year/${year}/seasontype/2/group/${groupId}`;
+  const html = await fetch(url).then(r => r.text());
+  const $ = cheerio.load(html);
+
+  const games = [];
+
+  $("table tbody tr").each((i, row) => {
+    const cols = $(row).find("td");
+
+    const time = $(cols[0]).text().trim();
+    const matchup = $(cols[1]).text().trim().replace(/\s+/g, " ");
+    const tv = $(cols[2]).text().trim();
+
+    if (matchup.length < 1) return;
+
+    games.push({
+      time,
+      matchup,
+      tv
+    });
+  });
+
+  return games;
+}
 
 export default async function handler(req, res) {
   try {
-    const year = req.query.year || "2025";
-    const week = req.query.week || "1";
+    const year = Number(req.query.year) || 2025;
+    const week = Number(req.query.week) || 1;
 
-    // ESPN groups
-    const GROUPS = {
-      fbs: 80,
-      fcs: 81,
-      d2d3: 35,
-    };
+    const results = {};
 
-    async function scrapeDivision(divName, groupId) {
-      const url = `https://www.espn.com/college-football/schedule/_/week/${week}/year/${year}/seasontype/2/group/${groupId}`;
-      
-      const html = await fetch(url).then(r => r.text());
-      const $ = cheerio.load(html);
-
-      const games = [];
-
-      $("table tbody tr").each((_, row) => {
-        const tds = $(row).find("td");
-        if (tds.length < 3) return;
-
-        const time = $(tds[0]).text().trim();
-        const matchup = $(tds[1]).text().trim();
-
-        games.push({
-          time,
-          matchup,
-          div: divName,
-        });
-      });
-
-      return games;
+    for (const div in GROUPS) {
+      results[div] = await scrapeGroup(year, week, GROUPS[div]);
     }
 
-    const [fbs, fcs, d2d3] = await Promise.all([
-      scrapeDivision("FBS", GROUPS.fbs),
-      scrapeDivision("FCS", GROUPS.fcs),
-      scrapeDivision("D2/D3", GROUPS.d2d3)
-    ]);
-
-    res.status(200).json({
+    return res.status(200).json({
       year,
       week,
-      divisions: {
-        fbs,
-        fcs,
-        d2: d2d3,   // split if you want later
-        d3: d2d3,   // same list for now (ESPN combines them)
-      }
+      divisions: results
     });
 
   } catch (err) {
-    console.error("ERROR:", err);
-    res.status(500).json({ error: "Scrape failed", details: err.toString() });
+    return res.status(500).json({ error: err.toString() });
   }
 }
