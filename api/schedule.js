@@ -1,5 +1,4 @@
 // /api/schedule.js
-
 export default async function handler(req, res) {
   const year = req.query.year || 2025;
   const week = req.query.week || 1;
@@ -16,50 +15,49 @@ export default async function handler(req, res) {
 
   try {
     for (const [name, group] of Object.entries(divisions)) {
-      const url = `https://site.web.api.espn.com/apis/v2/sports/football/college-football/scoreboard?week=${week}&year=${year}&group=${group}`;
+      const url =
+        `https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/events?week=${week}&season=${year}&groups=${group}`;
 
-      const response = await fetch(url);
-      const data = await response.json();
+      const eventList = await fetch(url).then(r => r.json());
 
-      const games = [];
-
-      if (!data.events) {
+      if (!eventList?.items || eventList.items.length === 0) {
         results[name] = [];
         continue;
       }
 
-      for (const event of data.events) {
-        const c = event.competitions?.[0];
-        if (!c) continue;
+      const games = [];
 
-        const competitors = c.competitors || [];
-        const home = competitors.find(t => t.homeAway === "home");
-        const away = competitors.find(t => t.homeAway === "away");
+      for (const item of eventList.items) {
+        const eventData = await fetch(item.$ref).then(r => r.json());
+
+        const comp = eventData.competitions?.[0];
+        if (!comp) continue;
+
+        const competitors = comp.competitors || [];
+        const home = competitors.find(c => c.homeAway === "home");
+        const away = competitors.find(c => c.homeAway === "away");
 
         const homeTeam = home?.team?.displayName || "";
         const awayTeam = away?.team?.displayName || "";
 
-        const matchup = `@ ${homeTeam}`; // UI handles full formatting
+        const matchup = `@ ${homeTeam}`;
 
-        // Handle missing time
-        let time = event.date ? new Date(event.date).toLocaleTimeString("en-US", {
-          hour: "numeric",
-          minute: "2-digit"
-        }) : "TBA";
-
-        // Past games may have no time → fallback
-        if (event.status?.type?.completed) {
-          time = home?.score && away?.score ? (home.score > away.score ? homeTeam : awayTeam) : "Final";
+        // Game time
+        let time = "TBA";
+        if (eventData.date) {
+          time = new Date(eventData.date).toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit"
+          });
         }
 
-        // TV may not exist
-        const tv = c.broadcasts?.[0]?.names?.[0] || "";
-
-        // Past games have a result instead of TV
+        // Completed games → show score
         let result = "";
         if (home?.score && away?.score) {
           result = `${homeTeam} ${home.score}, ${awayTeam} ${away.score}`;
         }
+
+        const tv = comp.broadcasts?.[0]?.names?.[0] || "";
 
         games.push({
           time,
@@ -73,8 +71,7 @@ export default async function handler(req, res) {
     }
 
     res.status(200).json({ week, divisions: results });
-
   } catch (err) {
-    res.status(500).json({ error: "Failed to scrape ESPN", details: err.toString() });
+    res.status(500).json({ error: err.toString() });
   }
 }
