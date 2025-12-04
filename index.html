@@ -1,123 +1,148 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>College Football – Full Week</title>
-    <style>
-        body {
-            background: #002b00;
-            color: #ffd700;
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            text-align: center;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-            color: #fff;
-        }
-        th {
-            background: #004400;
-            padding: 10px;
-            font-size: 18px;
-        }
-        td {
-            padding: 10px;
-            border-bottom: 1px solid #003300;
-        }
-        .btn {
-            padding: 10px 18px;
-            background: #ffd700;
-            color: #002b00;
-            border: none;
-            cursor: pointer;
-            margin: 10px;
-            font-size: 18px;
-            border-radius: 5px;
-        }
-        .top-title {
-            font-size: 40px;
-            margin-top: 20px;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>College Football – This Week</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, Arial, sans-serif;
+      background: #f4f4f4;
+      color: #111;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 20px 0 5px;
+      font-size: 28px;
+    }
+
+    #subtitle {
+      margin: 0 0 15px;
+      font-size: 16px;
+      color: #555;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 40px;
+    }
+
+    th, td {
+      padding: 8px 6px;
+      border-bottom: 1px solid #ddd;
+      font-size: 14px;
+    }
+
+    th {
+      background: #e0e0e0;
+      font-weight: bold;
+    }
+
+    tr.day-header td {
+      background: #ccc;
+      font-weight: bold;
+      text-align: left;
+      padding-top: 12px;
+      padding-bottom: 8px;
+      font-size: 16px;
+    }
+
+    @media (min-width: 700px) {
+      th, td {
+        font-size: 15px;
+        padding: 10px 8px;
+      }
+    }
+  </style>
 </head>
 <body>
 
-    <div class="top-title">College Football – Full Week</div>
+<h1>College Football – This Week</h1>
+<div id="subtitle">Loading…</div>
 
-    <button class="btn" onclick="changeWeek(-1)">← Previous Week</button>
-    <button class="btn" onclick="changeWeek(1)">Next Week →</button>
-
-    <div id="statusText" style="margin-top: 20px; font-size: 22px;">Loading…</div>
-
-    <table>
-        <thead>
-            <tr>
-                <th style="width: 20%;">Time</th>
-                <th style="width: 10%;">Div</th>
-                <th style="width: 45%;">Matchup</th>
-                <th style="width: 25%;">TV / Result</th>
-            </tr>
-        </thead>
-        <tbody id="gamesTable"></tbody>
-    </table>
+<table>
+  <thead>
+    <tr>
+      <th style="width: 16%;">Time</th>
+      <th style="width: 12%;">Div</th>
+      <th style="width: 44%;">Matchup</th>
+      <th style="width: 28%;">TV / Result</th>
+    </tr>
+  </thead>
+  <tbody id="games-body">
+  </tbody>
+</table>
 
 <script>
-let currentWeek = 12;
-let currentYear = 2025;
+  // Roughly estimate current CFB week based on late August as Week 1
+  function getCurrentCfbWeek() {
+    const today = new Date();
+    const year = today.getFullYear();
+    // Reference: Aug 25 of current year
+    const ref = new Date(year, 7, 25);
+    const diffDays = Math.floor((today - ref) / (1000 * 60 * 60 * 24));
+    const week = Math.max(1, Math.floor(diffDays / 7) + 1);
+    return { year, week };
+  }
 
-async function loadWeek() {
-    document.getElementById("statusText").innerText = "Loading…";
+  async function loadGames() {
+    const { year, week } = getCurrentCfbWeek();
+    const subtitle = document.getElementById("subtitle");
+    const tbody = document.getElementById("games-body");
 
-    const response = await fetch(`/api/schedule?year=${currentYear}&week=${currentWeek}`);
-    const data = await response.json();
+    subtitle.textContent = `Loading games for Week ${week}, ${year}…`;
+    tbody.innerHTML = "";
 
-    const gamesTable = document.getElementById("gamesTable");
-    gamesTable.innerHTML = "";
+    try {
+      const resp = await fetch(`/api/schedule?year=${year}&week=${week}`);
+      if (!resp.ok) {
+        subtitle.textContent = "Error loading schedule.";
+        return;
+      }
+      const data = await resp.json();
+      const games = Array.isArray(data.games) ? data.games : [];
 
-    let total = 0;
+      if (games.length === 0) {
+        subtitle.textContent = `No games found for Week ${week}, ${year}.`;
+        return;
+      }
 
-    for (const [divName, games] of Object.entries(data.divisions)) {
-        for (const game of games) {
-            total++;
+      subtitle.textContent = `Showing ${games.length} games for Week ${data.week}, ${data.year}.`;
 
-            const { time, matchup, tv, result } = game;
-
-            // Build result text
-            let resultText = "";
-            if (result.homeScore !== null && result.awayScore !== null) {
-                resultText = `${result.awayTeam} ${result.awayScore}, ${result.homeTeam} ${result.homeScore}`;
-            } else {
-                resultText = tv || "";
-            }
-
-            // Build matchup: Away @ Home
-            const matchupText = `${result.awayTeam} @ ${result.homeTeam}`;
-
-            const row = `
-                <tr>
-                    <td>${time}</td>
-                    <td>${divName}</td>
-                    <td>${matchupText}</td>
-                    <td>${resultText}</td>
-                </tr>
-            `;
-            gamesTable.innerHTML += row;
+      let currentDay = null;
+      for (const g of games) {
+        const day = g.day || "";
+        if (day !== currentDay) {
+          currentDay = day;
+          const dayRow = document.createElement("tr");
+          dayRow.className = "day-header";
+          const cell = document.createElement("td");
+          cell.colSpan = 4;
+          cell.textContent = day || "Day";
+          dayRow.appendChild(cell);
+          tbody.appendChild(dayRow);
         }
+
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${g.time || ""}</td>
+          <td>${g.division || ""}</td>
+          <td>${g.matchup || ""}</td>
+          <td>${g.tvOrResult || ""}</td>
+        `;
+        tbody.appendChild(row);
+      }
+    } catch (err) {
+      console.error(err);
+      subtitle.textContent = "Error loading schedule.";
     }
+  }
 
-    document.getElementById("statusText").innerText =
-        `Loaded ${total} games for Week ${currentWeek}`;
-}
-
-function changeWeek(diff) {
-    currentWeek += diff;
-    loadWeek();
-}
-
-loadWeek();
+  loadGames();
 </script>
 
 </body>
