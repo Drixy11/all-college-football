@@ -1,148 +1,149 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>College Football – This Week</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>College Football – This Week</title>
+
+<style>
     body {
-      margin: 0;
-      padding: 0;
-      font-family: system-ui, Arial, sans-serif;
-      background: #f4f4f4;
-      color: #111;
-      text-align: center;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+        background: #f3f3f3;
     }
 
     h1 {
-      margin: 20px 0 5px;
-      font-size: 28px;
+        text-align: center;
+        margin-bottom: 10px;
     }
 
-    #subtitle {
-      margin: 0 0 15px;
-      font-size: 16px;
-      color: #555;
+    .tables-wrapper {
+        display: flex;
+        gap: 20px;
     }
 
     table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 40px;
-    }
-
-    th, td {
-      padding: 8px 6px;
-      border-bottom: 1px solid #ddd;
-      font-size: 14px;
+        width: 50%;
+        background: white;
+        border-collapse: collapse;
+        font-size: 14px;
     }
 
     th {
-      background: #e0e0e0;
-      font-weight: bold;
+        background: #ddd;
+        padding: 8px;
+        text-align: left;
+        border-bottom: 2px solid #aaa;
     }
 
-    tr.day-header td {
-      background: #ccc;
-      font-weight: bold;
-      text-align: left;
-      padding-top: 12px;
-      padding-bottom: 8px;
-      font-size: 16px;
+    td {
+        padding: 8px;
+        border-bottom: 1px solid #eee;
     }
 
-    @media (min-width: 700px) {
-      th, td {
-        font-size: 15px;
-        padding: 10px 8px;
-      }
+    .day-row {
+        background: #ccc;
+        font-weight: bold;
+        text-align: left;
     }
-  </style>
+
+    @media(max-width: 900px) {
+        table {
+            width: 100%;
+        }
+        .tables-wrapper {
+            flex-direction: column;
+        }
+    }
+</style>
 </head>
 <body>
 
 <h1>College Football – This Week</h1>
-<div id="subtitle">Loading…</div>
+<p style="text-align:center" id="count"></p>
 
-<table>
-  <thead>
-    <tr>
-      <th style="width: 16%;">Time</th>
-      <th style="width: 12%;">Div</th>
-      <th style="width: 44%;">Matchup</th>
-      <th style="width: 28%;">TV / Result</th>
-    </tr>
-  </thead>
-  <tbody id="games-body">
-  </tbody>
-</table>
+<div class="tables-wrapper">
+    <table id="table1">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Div</th>
+                <th>Matchup</th>
+                <th>TV</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <table id="table2">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Div</th>
+                <th>Matchup</th>
+                <th>TV</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
 
 <script>
-  // Roughly estimate current CFB week based on late August as Week 1
-  function getCurrentCfbWeek() {
+async function loadGames() {
     const today = new Date();
-    const year = today.getFullYear();
-    // Reference: Aug 25 of current year
-    const ref = new Date(year, 7, 25);
-    const diffDays = Math.floor((today - ref) / (1000 * 60 * 60 * 24));
-    const week = Math.max(1, Math.floor(diffDays / 7) + 1);
-    return { year, week };
-  }
+    const url = `/api/schedule?year=${today.getFullYear()}&week=current`;
 
-  async function loadGames() {
-    const { year, week } = getCurrentCfbWeek();
-    const subtitle = document.getElementById("subtitle");
-    const tbody = document.getElementById("games-body");
+    const res = await fetch(url);
+    const data = await res.json();
+    const games = data.games || [];
 
-    subtitle.textContent = `Loading games for Week ${week}, ${year}…`;
+    document.getElementById("count").innerText =
+        `Showing ${games.length} games for Week ${data.week}, ${data.year}.`;
+
+    const mid = Math.ceil(games.length / 2);
+    const firstHalf = games.slice(0, mid);
+    const secondHalf = games.slice(mid);
+
+    fillTable("table1", firstHalf);
+    fillTable("table2", secondHalf);
+}
+
+function fillTable(id, list) {
+    const tbody = document.querySelector(`#${id} tbody`);
     tbody.innerHTML = "";
 
-    try {
-      const resp = await fetch(`/api/schedule?year=${year}&week=${week}`);
-      if (!resp.ok) {
-        subtitle.textContent = "Error loading schedule.";
-        return;
-      }
-      const data = await resp.json();
-      const games = Array.isArray(data.games) ? data.games : [];
+    let lastDay = "";
 
-      if (games.length === 0) {
-        subtitle.textContent = `No games found for Week ${week}, ${year}.`;
-        return;
-      }
-
-      subtitle.textContent = `Showing ${games.length} games for Week ${data.week}, ${data.year}.`;
-
-      let currentDay = null;
-      for (const g of games) {
-        const day = g.day || "";
-        if (day !== currentDay) {
-          currentDay = day;
-          const dayRow = document.createElement("tr");
-          dayRow.className = "day-header";
-          const cell = document.createElement("td");
-          cell.colSpan = 4;
-          cell.textContent = day || "Day";
-          dayRow.appendChild(cell);
-          tbody.appendChild(dayRow);
+    list.forEach(g => {
+        if (g.day !== lastDay) {
+            tbody.innerHTML += `<tr class="day-row"><td colspan="4">${g.day}</td></tr>`;
+            lastDay = g.day;
         }
 
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${g.time || ""}</td>
-          <td>${g.division || ""}</td>
-          <td>${g.matchup || ""}</td>
-          <td>${g.tvOrResult || ""}</td>
+        tbody.innerHTML += `
+            <tr>
+                <td>${g.time}</td>
+                <td>${g.division}</td>
+                <td>${formatMatchup(g)}</td>
+                <td>${g.tv}</td>
+            </tr>
         `;
-        tbody.appendChild(row);
-      }
-    } catch (err) {
-      console.error(err);
-      subtitle.textContent = "Error loading schedule.";
-    }
-  }
+    });
+}
 
-  loadGames();
+function formatMatchup(g) {
+    return `${fmtTeam(g.away)} @ ${fmtTeam(g.home)}`;
+}
+
+function fmtTeam(t) {
+    if (!t || !t.name) return "";
+    if (t.rank && t.rank >= 1 && t.rank <= 25)
+        return "#" + t.rank + " " + t.name;
+    return t.name;
+}
+
+loadGames();
 </script>
 
 </body>
