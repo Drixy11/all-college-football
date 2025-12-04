@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Drixy College Football Schedule</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 1.5rem;
+      background: #0b1020;
+      color: #f9fafb;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 1.7rem;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      align-items: center;
+    }
+    .controls label {
+      font-size: 0.9rem;
+    }
+    input[type="number"] {
+      width: 5rem;
+      padding: 0.2rem 0.35rem;
+      border-radius: 4px;
+      border: 1px solid #4b5563;
+      background: #111827;
+      color: #f9fafb;
+    }
+    .divisions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid #4b5563;
+      font-size: 0.8rem;
+      background: #111827;
+    }
+    button {
+      padding: 0.4rem 0.9rem;
+      border-radius: 999px;
+      border: none;
+      background: #2563eb;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    #status {
+      font-size: 0.85rem;
+      margin-bottom: 0.5rem;
+      min-height: 1.1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #020617;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      font-size: 0.9rem;
+    }
+    thead {
+      background: #111827;
+    }
+    th, td {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid #1f2937;
+      text-align: left;
+      white-space: nowrap;
+    }
+    th:nth-child(3),
+    td:nth-child(3) {
+      white-space: normal;
+    }
+    tr:nth-child(even) {
+      background: #020617;
+    }
+    tr:nth-child(odd) {
+      background: #020617;
+    }
+    .division-pill {
+      display: inline-block;
+      padding: 0.1rem 0.4rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      background: #1f2937;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .status-final {
+      color: #22c55e;
+      font-weight: 600;
+    }
+    .status-live {
+      color: #f97316;
+      font-weight: 600;
+    }
+    .status-scheduled {
+      color: #e5e7eb;
+    }
+    @media (max-width: 700px) {
+      table, thead, tbody, tr, th, td {
+        font-size: 0.78rem;
+      }
+      body {
+        padding: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Drixy College Football Schedule</h1>
+  <p style="font-size:0.85rem;max-width:40rem;color:#9ca3af;">
+    Unified schedule for <strong>FBS / FCS / DII / DIII</strong>. Choose season + week,
+    pick which divisions you want, then hit <strong>Load schedule</strong>.
+  </p>
+
+  <div class="controls">
+    <label>
+      Season&nbsp;Year
+      <input type="number" id="seasonYear" />
+    </label>
+
+    <label>
+      Week
+      <input type="number" id="seasonWeek" min="1" max="20" />
+    </label>
+
+    <div class="divisions">
+      <label class="chip">
+        <input type="checkbox" class="division-checkbox" value="fbs" checked /> FBS
+      </label>
+      <label class="chip">
+        <input type="checkbox" class="division-checkbox" value="fcs" checked /> FCS
+      </label>
+      <label class="chip">
+        <input type="checkbox" class="division-checkbox" value="d2" checked /> DII
+      </label>
+      <label class="chip">
+        <input type="checkbox" class="division-checkbox" value="d3" checked /> DIII
+      </label>
+    </div>
+
+    <button id="loadBtn">Load schedule</button>
+  </div>
+
+  <div id="status"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Div</th>
+        <th>Matchup</th>
+        <th>TV</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="scheduleBody">
+      <!-- rows injected by JS -->
+    </tbody>
+  </table>
+
+  <script>
+    const API_BASE = "https://ncaa-api.henrygd.me";
+
+    function initDefaults() {
+      const yearInput = document.getElementById("seasonYear");
+      const weekInput = document.getElementById("seasonWeek");
+      const now = new Date();
+      const year = now.getFullYear();
+      yearInput.value = year;
+
+      // Very rough default: mid-season week guess
+      // You can change this manually when you know the NCAA "week"
+      weekInput.value = 1;
+    }
+
+    function setStatus(msg, isError = false) {
+      const el = document.getElementById("status");
+      el.textContent = msg || "";
+      el.style.color = isError ? "#fecaca" : "#9ca3af";
+    }
+
+    async function fetchDivisionSchedule(division, year, week) {
+      const weekStr = String(week).padStart(2, "0");
+      const url = `${API_BASE}/scoreboard/football/${division}/${year}/${weekStr}/all-conf`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`Error ${res.status} loading ${division.toUpperCase()} schedule`);
+      }
+      const data = await res.json();
+      const games = (data.games || []).map(g => normalizeGame(g.game || g, division));
+      return games;
+    }
+
+    function normalizeGame(game, division) {
+      // Team names
+      const homeTeam =
+        (game.home && (game.home.names?.short || game.home.names?.full || game.home.names?.seo)) ||
+        "Home";
+      const awayTeam =
+        (game.away && (game.away.names?.short || game.away.names?.full || game.away.names?.seo)) ||
+        "Away";
+
+      // Time: NCAA API usually exposes an ISO-ish string like startTime or startTimeEpoch
+      const isoTime = game.startTime || game.gameDate || null;
+
+      // Broadcasts array -> TV string
+      let tv = "";
+      if (Array.isArray(game.broadcasts) && game.broadcasts.length > 0) {
+        tv = game.broadcasts
+          .map(b => b.name || b.media || b.provider)
+          .filter(Boolean)
+          .join(", ");
+      }
+
+      const state = (game.gameState || game.status || "scheduled").toLowerCase();
+
+      return {
+        division,
+        homeTeam,
+        awayTeam,
+        isoTime,
+        tv,
+        state
+      };
+    }
+
+    function formatTime(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    }
+
+    function formatDivision(div) {
+      switch (div) {
+        case "fbs": return "FBS";
+        case "fcs": return "FCS";
+        case "d2":  return "DII";
+        case "d3":  return "DIII";
+        default:    return div.toUpperCase();
+      }
+    }
+
+    function statusClass(state) {
+      if (state.includes("final")) return "status-final";
+      if (state.includes("live") || state.includes("inprogress") || state.includes("in progress")) {
+        return "status-live";
+      }
+      return "status-scheduled";
+    }
+
+    function renderSchedule(games) {
+      const tbody = document.getElementById("scheduleBody");
+      tbody.innerHTML = "";
+
+      if (!games.length) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 5;
+        td.textContent = "No games found for this week / selection.";
+        tbody.appendChild(tr);
+        tr.appendChild(td);
+        return;
+      }
+
+      // Sort by time, then division, then matchup
+      games.sort((a, b) => {
+        const tA = a.isoTime || "";
+        const tB = b.isoTime || "";
+        if (tA < tB) return -1;
+        if (tA > tB) return 1;
+        const dA = a.division.localeCompare(b.division);
+        if (dA !== 0) return dA;
+        const mA = (a.awayTeam + a.homeTeam).toLowerCase();
+        const mB = (b.awayTeam + b.homeTeam).toLowerCase();
+        return mA.localeCompare(mB);
+      });
+
+      for (const g of games) {
+        const tr = document.createElement("tr");
+
+        const tdTime = document.createElement("td");
+        tdTime.textContent = formatTime(g.isoTime);
+
+        const tdDiv = document.createElement("td");
+        const spanDiv = document.createElement("span");
+        spanDiv.className = "division-pill";
+        spanDiv.textContent = formatDivision(g.division);
+        tdDiv.appendChild(spanDiv);
+
+        const tdMatchup = document.createElement("td");
+        tdMatchup.textContent = `${g.awayTeam} @ ${g.homeTeam}`;
+
+        const tdTv = document.createElement("td");
+        tdTv.textContent = g.tv || "";
+
+        const tdStatus = document.createElement("td");
+        tdStatus.textContent = g.state.replace(/_/g, " ");
+        tdStatus.className = statusClass(g.state);
+
+        tr.appendChild(tdTime);
+        tr.appendChild(tdDiv);
+        tr.appendChild(tdMatchup);
+        tr.appendChild(tdTv);
+        tr.appendChild(tdStatus);
+
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function loadSchedule() {
+      const year = Number(document.getElementById("seasonYear").value);
+      const week = Number(document.getElementById("seasonWeek").value);
+
+      if (!year || !week) {
+        setStatus("Enter a valid season year and week.", true);
+        return;
+      }
+
+      const checkedDivs = Array.from(
+        document.querySelectorAll(".division-checkbox:checked")
+      ).map(cb => cb.value);
+
+      if (!checkedDivs.length) {
+        setStatus("Select at least one division.", true);
+        return;
+      }
+
+      setStatus("Loading schedule…");
+      try {
+        const allGames = [];
+        for (const div of checkedDivs) {
+          const games = await fetchDivisionSchedule(div, year, week);
+          allGames.push(...games);
+        }
+        renderSchedule(allGames);
+        setStatus(`Loaded ${allGames.length} games for Week ${week}, ${year}.`);
+      } catch (err) {
+        console.error(err);
+        setStatus(err.message || "Error loading schedule.", true);
+      }
+    }
+
+    document.getElementById("loadBtn").addEventListener("click", loadSchedule);
+
+    initDefaults();
+  </script>
+</body>
+</html>
