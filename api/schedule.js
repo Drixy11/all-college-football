@@ -1,83 +1,61 @@
-const cheerio = require("cheerio");
+import * as cheerio from "cheerio";
 
-module.exports = async function (req, res) {
+export default async function handler(req, res) {
   try {
-    const { year, week } = req.query;
+    const year = req.query.year || "2025";
+    const week = req.query.week || "1";
 
-    if (!year || !week) {
-      return res.status(400).json({ error: "Missing year or week" });
-    }
-
-    const DIVS = {
+    // ESPN groups
+    const GROUPS = {
       fbs: 80,
       fcs: 81,
-      d2: 50,
-      d3: 55,
+      d2d3: 35,
     };
 
-    async function fetchDivision(divName, groupId) {
-      const url = `https://www.espn.com/college-football/schedule/_/week/${week}/year/${year}/group/${groupId}`;
-
-      const html = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-      }).then((r) => r.text());
-
+    async function scrapeDivision(divName, groupId) {
+      const url = `https://www.espn.com/college-football/schedule/_/week/${week}/year/${year}/seasontype/2/group/${groupId}`;
+      
+      const html = await fetch(url).then(r => r.text());
       const $ = cheerio.load(html);
+
       const games = [];
 
-      $(".ScheduleTables .Table__TBODY .Table__TR").each((i, row) => {
-        const cols = $(row).find(".Table__TD");
+      $("table tbody tr").each((_, row) => {
+        const tds = $(row).find("td");
+        if (tds.length < 3) return;
 
-        if (cols.length < 3) return;
-
-        const time = $(cols[0]).text().trim();
-
-        /// teams
-        const teams = $(cols[1]).find(".TeamLink");
-        const away = $(teams[0]);
-        const home = $(teams[1]);
-
-        const awayTeam = away.text().trim();
-        const homeTeam = home.text().trim();
-
-        const awayLogo = away.find("img").attr("src") || null;
-        const homeLogo = home.find("img").attr("src") || null;
-
-        const tv = $(cols[2]).text().trim();
-        const link = $(cols[1]).find("a").attr("href") || null;
+        const time = $(tds[0]).text().trim();
+        const matchup = $(tds[1]).text().trim();
 
         games.push({
-          division: divName,
           time,
-          tv,
-          link: link ? `https://www.espn.com${link}` : null,
-          away: {
-            team: awayTeam,
-            logo: awayLogo,
-          },
-          home: {
-            team: homeTeam,
-            logo: homeLogo,
-          },
+          matchup,
+          div: divName,
         });
       });
 
       return games;
     }
 
-    const divisions = {};
+    const [fbs, fcs, d2d3] = await Promise.all([
+      scrapeDivision("FBS", GROUPS.fbs),
+      scrapeDivision("FCS", GROUPS.fcs),
+      scrapeDivision("D2/D3", GROUPS.d2d3)
+    ]);
 
-    for (let div in DIVS) {
-      divisions[div] = await fetchDivision(div, DIVS[div]);
-    }
-
-    return res.json({
+    res.status(200).json({
       year,
       week,
-      divisions,
+      divisions: {
+        fbs,
+        fcs,
+        d2: d2d3,   // split if you want later
+        d3: d2d3,   // same list for now (ESPN combines them)
+      }
     });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server crash", details: String(err) });
+    console.error("ERROR:", err);
+    res.status(500).json({ error: "Scrape failed", details: err.toString() });
   }
-};
+}
