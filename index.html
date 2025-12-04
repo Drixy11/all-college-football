@@ -151,14 +151,13 @@ let currentWeek = null;
 let allData = null;
 
 async function detectCurrentWeek() {
-  // ESPN weeks follow CFBD's mapping; use CFBD’s calendar
   const res = await fetch(`https://api.collegefootballdata.com/calendar?year=${currentYear}`);
   const weeks = await res.json();
   const today = new Date();
 
-  const w = weeks.find(w => {
-    return today >= new Date(w.startDate) && today <= new Date(w.endDate);
-  });
+  const w = weeks.find(w =>
+    today >= new Date(w.startDate) && today <= new Date(w.endDate)
+  );
 
   currentWeek = w ? w.week : 1;
 }
@@ -169,7 +168,8 @@ async function loadSchedule() {
 
   const url = `/api/schedule?year=${currentYear}&week=${currentWeek}`;
   const data = await fetch(url).then(r => r.json());
-  allData = data;
+
+  allData = data.divisions;
 
   document.getElementById("weekLabel").textContent =
     `Week ${currentWeek} (${currentYear})`;
@@ -184,8 +184,10 @@ function renderTable() {
     .map(cb => cb.value);
 
   const rows = [];
+
   for (const div of selected) {
-    for (const g of allData.divisions[div]) {
+    const games = allData[div] || [];
+    for (const g of games) {
       rows.push(g);
     }
   }
@@ -202,17 +204,17 @@ function renderTable() {
       <td>
         <div class="team">
           ${g.away.logo ? `<img src="${g.away.logo}" />` : ""}
-          <span class="rank">${g.away.rank || ""}</span>
+          ${g.away.rank ? `<span class="rank">${g.away.rank}</span>` : ""}
           ${g.away.team}
         </div>
         @
         <div class="team">
           ${g.home.logo ? `<img src="${g.home.logo}" />` : ""}
-          <span class="rank">${g.home.rank || ""}</span>
+          ${g.home.rank ? `<span class="rank">${g.home.rank}</span>` : ""}
           ${g.home.team}
         </div>
       </td>
-      <td>${g.tv}</td>
+      <td>${g.tv || ""}</td>
     `;
 
     tbody.appendChild(tr);
@@ -230,6 +232,7 @@ document.getElementById("prevWeek").onclick = () => {
   currentWeek = Math.max(1, currentWeek - 1);
   loadSchedule();
 };
+
 document.getElementById("nextWeek").onclick = () => {
   currentWeek++;
   loadSchedule();
@@ -240,6 +243,7 @@ document.getElementById("nextWeek").onclick = () => {
   await loadSchedule();
 })();
 </script>
+
 
 </body>
 </html>
